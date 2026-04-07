@@ -4,6 +4,25 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.3] — 2026-04-07
+
+### Changed
+- 层级命名：L1~L5 → second/minute/hour/day/week/month/year（DDR-009）
+- flashbulb：独立目录 → frontmatter `flashbulb: true` 原地标记（DDR-011）
+- 注入机制：GET /memory 接口 → 直接维护 MEMORY.md 文件（DDR-012）
+
+### Added
+- 纯文件系统存储方案：目录即层级，YAML frontmatter + Markdown（DDR-010）
+- 文件命名规则、compressed 状态追踪、cron 扫描逻辑
+- write_level 配置：低频 agent 从 hour 起，高频从 minute 起
+- 兼容各家 agent 产品的 memory 文件路径配置
+
+### Removed
+- GET /memory 对外接口（降级为内部方法）
+- flashbulb/ 目录
+
+---
+
 ## [v0.2] — 2026-04-07
 
 ### Changed
