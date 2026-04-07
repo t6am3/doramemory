@@ -4,6 +4,29 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.4] — 2026-04-07
+
+### Changed
+- 去除所有伪精度数值：fidelity 系数、numeric importance、衰减公式（DDR-013）
+- /compress → /write，职责收窄为纯 IO 写入 second/
+- 框架 context 管理与 DoraMemory 完全分离（DDR-017）
+- 长存续 session：gap injection → session-aware 视图实时重建（DDR-016）
+
+### Added
+- Flashbulb 由压缩过程中 LLM 识别产生，不再是阈值/人工触发（DDR-014）
+- core/ 双层结构：recent/（具体事件，上限 N 条）+ identity.md（≤200 tokens）（DDR-015）
+- MEMORY.md 三层结构：身份层 + 重要记忆 + 近期时间流，总体积有界
+- 消息 oversize 处理：重要大消息立即生成 minute/ 摘要，噪音大消息截断
+- session 元信息：started_at / last_active_at，支持 resume 检测
+- Recall 时间范围查询：精度自动决定返回层级，sources 字段支持 drill-down
+
+### Removed
+- fidelity 相关所有字段和公式
+- numeric importance（0~1 浮点数）
+- flashbulb/ 独立目录（已在 v0.3 移除，identity 层是新增）
+
+---
+
 ## [v0.3] — 2026-04-07
 
 ### Changed
