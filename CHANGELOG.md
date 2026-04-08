@@ -4,6 +4,21 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.7] — 2026-04-08
+
+### Added
+- 完整安装流程：`npx doramemory init` 四步引导
+- LLM 配置三种形态：Anthropic / OpenAI / custom，支持环境变量引用（DDR-026）
+- Daemon 统一管理 FSWatcher + cron，launchd/systemd 注册（DDR-027）
+- CLI 命令集：init / status / stop / restart / backfill / uninstall
+- 卸载流程，默认保留数据
+
+### Changed
+- MEMORY.md 注入改为占位符方案 `{{DORAMEMORY}}`（DDR-025）
+- 配置文件完整规范：watch / compression / embedding / 各项阈值
+
+---
+
 ## [v0.6] — 2026-04-08
 
 ### Added
