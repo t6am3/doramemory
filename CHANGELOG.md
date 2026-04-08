@@ -4,6 +4,18 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.6] — 2026-04-08
+
+### Added
+- /ingest 推送接口，作为 FSWatcher 的 fallback（DDR-021）
+- message_id + bloom filter 去重，保证幂等（DDR-022）
+- Embedding 策略：只写 day 及以上层级，cron 后批量更新（DDR-023）
+- Recall 排序：grep + embedding 相似度 + 时间近度 tiebreaker（DDR-024）
+- match_type 字段：告知 agent 结果的命中方式
+- index/ 目录：bloom filter + embeddings.db + cursors/
+
+---
+
 ## [v0.5] — 2026-04-08
 
 ### Changed
