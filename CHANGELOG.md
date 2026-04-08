@@ -4,6 +4,19 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.8] — 2026-04-08
+
+### Added
+- sessions/ 目录：每个 session 独立 yaml，存 started_at/last_active_at/compressed_to（DDR-028）
+- 技术栈确定：TypeScript + chokidar + fastify + sqlite-vec + @modelcontextprotocol/sdk（DDR-029）
+- v1 实现范围定义：Claude Code + Anthropic + second/hour/day 三层（DDR-030）
+- 完整项目目录结构：cli/daemon/parsers/storage/index/memory/llm/mcp/http
+
+### Changed
+- 完整存储目录终稿，含 sessions/ 和 index/
+
+---
+
 ## [v0.7] — 2026-04-08
 
 ### Added
