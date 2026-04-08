@@ -4,6 +4,16 @@ import { join } from 'path'
 import yaml from 'js-yaml'
 import { callLLM } from '../llm/client.js'
 import { LAYER_DIRS, hourFilePath, dayFilePath } from './paths.js'
+
+function weekFilePath(week: string): string {
+  return join(LAYER_DIRS.week, `${week}.md`)
+}
+function monthFilePath(month: string): string {
+  return join(LAYER_DIRS.month, `${month}.md`)
+}
+function yearFilePath(year: string): string {
+  return join(LAYER_DIRS.year, `${year}.md`)
+}
 import type { LLMConfig, MemoryFrontmatter } from '../types.js'
 
 // Parse frontmatter + body from a markdown file
@@ -164,4 +174,152 @@ export async function compressHourToDay(
   }
 
   return { flashbulb }
+}
+
+// Generic higher-layer compression: collect files matching a prefix from sourceDir,
+// compress them with LLM, write to outFile, mark sources as compressed.
+async function compressLayer(
+  sourceDir: string,
+  sourcePrefix: string,
+  outFile: string,
+  id: string,
+  prompt: string,
+  llmConfig: LLMConfig
+): Promise<void> {
+  if (existsSync(outFile)) return
+
+  const files = await readdir(sourceDir).catch(() => [] as string[])
+  const matching = files
+    .filter(f => f.startsWith(sourcePrefix) && f.endsWith('.md'))
+    .map(f => join(sourceDir, f))
+    .sort()
+
+  if (matching.length === 0) return
+
+  const contents: string[] = []
+  const sourceIds: string[] = []
+  for (const f of matching) {
+    const raw = await readFile(f, 'utf8')
+    const { frontmatter, body } = parseMemoryFile(raw)
+    if (frontmatter.compressed) continue
+    contents.push(body)
+    sourceIds.push(frontmatter.id)
+  }
+  if (contents.length === 0) return
+
+  const summary = await callLLM(llmConfig, prompt.replace('{content}', contents.join('\n\n---\n\n')))
+
+  const frontmatter: MemoryFrontmatter = {
+    id,
+    flashbulb:    false,
+    compressed:   false,
+    sources:      sourceIds,
+    compressed_at: new Date().toISOString(),
+  }
+  await writeFile(outFile, buildMarkdown(frontmatter, summary), 'utf8')
+
+  for (const f of matching) {
+    const raw = await readFile(f, 'utf8')
+    const { frontmatter: fm, body } = parseMemoryFile(raw)
+    if (sourceIds.includes(fm.id)) {
+      fm.compressed = true
+      await writeFile(f, buildMarkdown(fm, body), 'utf8')
+    }
+  }
+}
+
+const WEEK_COMPRESS_PROMPT = `你是一个记忆压缩助手。下面是某一周的每日摘要，请将它们压缩为一份周摘要。
+
+要求：
+- 提取本周最重要的主题、决策、模式
+- 识别关键实体（人/项目/概念）的状态变化
+- 输出简洁的周摘要，纯文本
+
+每日摘要内容：
+{content}`
+
+const MONTH_COMPRESS_PROMPT = `你是一个记忆压缩助手。下面是某个月的每周摘要，请将它们压缩为一份月摘要。
+
+要求：
+- 提炼这个月最重要的进展和转折点
+- 识别认知层面的更新（想法/判断/偏好的变化）
+- 输出简洁的月摘要，纯文本
+
+每周摘要内容：
+{content}`
+
+const YEAR_COMPRESS_PROMPT = `你是一个记忆压缩助手。下面是某一年的每月摘要，请将它们压缩为一份年骨架。
+
+要求：
+- 只保留这一年最核心的 narrative：重大转折、关键决策、身份变化
+- 极度精简，不超过 300 字
+- 输出纯文本
+
+每月摘要内容：
+{content}`
+
+// week = "2026-W14" — collect day/ files belonging to that week
+export async function compressDayToWeek(week: string, llmConfig: LLMConfig): Promise<void> {
+  // Derive the monday date of that week to find day/ files
+  const [yearStr, weekStr] = week.split('-W')
+  const year = parseInt(yearStr)
+  const weekNum = parseInt(weekStr)
+  const jan4 = new Date(Date.UTC(year, 0, 4))
+  const monday = new Date(jan4.getTime() + (weekNum - 1) * 7 * 86400000)
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))
+
+  const dayPrefixes: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday.getTime() + i * 86400000)
+    dayPrefixes.push(d.toISOString().slice(0, 10))
+  }
+
+  const dir = LAYER_DIRS.day
+  const files = await readdir(dir).catch(() => [] as string[])
+  const matching = files
+    .filter(f => dayPrefixes.some(p => f.startsWith(p)) && f.endsWith('.md'))
+    .map(f => join(dir, f))
+    .sort()
+
+  if (matching.length === 0) return
+  const outFile = weekFilePath(week)
+  if (existsSync(outFile)) return
+
+  const contents: string[] = []
+  const sourceIds: string[] = []
+  for (const f of matching) {
+    const raw = await readFile(f, 'utf8')
+    const { frontmatter, body } = parseMemoryFile(raw)
+    if (frontmatter.compressed) continue
+    contents.push(body)
+    sourceIds.push(frontmatter.id)
+  }
+  if (contents.length === 0) return
+
+  const summary = await callLLM(llmConfig, WEEK_COMPRESS_PROMPT.replace('{content}', contents.join('\n\n---\n\n')))
+  const frontmatter: MemoryFrontmatter = { id: week, flashbulb: false, compressed: false, sources: sourceIds, compressed_at: new Date().toISOString() }
+  await writeFile(outFile, buildMarkdown(frontmatter, summary), 'utf8')
+  for (const f of matching) {
+    const raw = await readFile(f, 'utf8')
+    const { frontmatter: fm, body } = parseMemoryFile(raw)
+    if (sourceIds.includes(fm.id)) { fm.compressed = true; await writeFile(f, buildMarkdown(fm, body), 'utf8') }
+  }
+}
+
+// month = "2026-03" — collect week/ files whose monday falls in that month
+export async function compressWeekToMonth(month: string, llmConfig: LLMConfig): Promise<void> {
+  await compressLayer(
+    LAYER_DIRS.week, month.slice(0, 7),
+    monthFilePath(month), month,
+    MONTH_COMPRESS_PROMPT, llmConfig
+  )
+}
+
+// year = "2026" — collect month/ files for that year
+export async function compressMonthToYear(year: string, llmConfig: LLMConfig): Promise<void> {
+  await compressLayer(
+    LAYER_DIRS.month, year,
+    yearFilePath(year), year,
+    YEAR_COMPRESS_PROMPT, llmConfig
+  )
 }
