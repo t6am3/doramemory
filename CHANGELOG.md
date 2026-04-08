@@ -4,6 +4,24 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.5] — 2026-04-08
+
+### Changed
+- /write 接口消失，改为文件监控守护进程（DDR-018）
+- 对外接口从三个减为两个：/recall + /remember
+
+### Added
+- cursor 文件追踪增量读取，保证幂等（DDR-019）
+- 冷启动策略：默认回溯 7 天，支持手动 backfill（DDR-020）
+- session 边界推断规则（时间间隔 + 文件粒度）
+- 并发写入处理：MEMORY.md 写入加文件锁
+- oversize 消息异步处理
+- MEMORY.md 更新频率控制
+- .doraignore 隐私排除配置
+- session resume 视图写入 sessions/{id}/view.md
+
+---
+
 ## [v0.4] — 2026-04-07
 
 ### Changed
