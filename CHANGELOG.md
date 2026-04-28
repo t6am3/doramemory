@@ -4,6 +4,25 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.9] — 2026-04-08
+
+### Changed
+- MEMORY.md 生成模型重构：DoraMemory 不再注入当前会话消息，只提供 hour 及以上历史记忆（DDR-031）
+- 废弃贪心预算分配算法，改为分层固定预算，每层互不侵犯（DDR-032）
+- 压缩流程改为 agentic 模式，LLM 必须通过 compress_as tool 提交结果，写入前校验 token 限制（DDR-033）
+
+### Added
+- `memory_budget` 配置项：每层 max_entries + max_tokens_per_entry，全部可配置（DDR-034）
+- `compress_as` tool 定义：layer / id / content / flashbulb，返回 success + tokens_used
+- 默认预算方案：总计 ~3500 tokens，identity 200 + flashbulb 300 + hour 1200 + day 750 + week 400 + month 480 + year 180
+
+### Removed
+- ~~tokenCapForAge()~~ — 已在压缩时控制，builder 不再需要
+- ~~truncateToTokens()~~ — 文件已经在限制内，builder 不再截断
+- ~~贪心 token 预算分配~~ — 改为分层固定读取
+
+---
+
 ## [v0.8] — 2026-04-08
 
 ### Added

@@ -1,0 +1,13 @@
+# DoraMemory config — Claude Code + Anthropic API
+# Usage: npx doramemory init --config ./config-claude-anthropic.yaml
+
+watch:
+  - path: ~/.claude/projects
+    format: claude
+    memory_file: ~/.claude/CLAUDE.md
+
+compression:
+  model:
+    provider: anthropic
+    model_id: claude-haiku-4-5-20251001
+    # api_key: sk-ant-...  # or set ANTHROPIC_API_KEY env var

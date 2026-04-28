@@ -9,15 +9,28 @@ export interface RawMessage {
   timestamp: string  // ISO 8601
 }
 
+export interface SecondEntry {
+  id: string
+  session_id: string
+  role: MessageRole
+  timestamp: string
+  content: string
+  flashbulb: boolean
+  truncated?: boolean
+  project?: string
+}
+
 // File frontmatter for all layers
 export interface MemoryFrontmatter {
   id: string
   session_id?: string
   timestamp?: string
+  title?: string
   flashbulb: boolean
   compressed: boolean
-  sources: string[]    // IDs of source files from layer below
+  sources: string[]
   compressed_at?: string
+  project?: string
 }
 
 // Session metadata stored in sessions/{id}.yaml
@@ -27,20 +40,23 @@ export interface SessionMeta {
   started_at: string
   last_active_at: string
   message_count: number
-  compressed_to: 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year' | null
+  compressed_to: 'second' | 'session' | null
 }
 
 // Memory layers
-export type MemoryLayer = 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year' | 'core'
+export type MemoryLayer = 'second' | 'session' | 'core'
 
 // A chunk returned by recall
 export interface MemoryChunk {
-  content: string
-  layer: MemoryLayer
-  time_range: { from: string; to: string }
-  sources: string[]
-  match_type: 'keyword' | 'semantic' | 'time'
+  layer: string
+  id: string
+  summary: string
+  snippet: string
+  file_path: string
+  size: number
   flashbulb: boolean
+  match_type: 'keyword' | 'semantic' | 'time'
+  score: number
 }
 
 // Recall request
@@ -48,6 +64,8 @@ export interface RecallRequest {
   query?: string
   time_range?: { from: string; to?: string }
   max_tokens?: number
+  max_results?: number
+  offset?: number
 }
 
 // Ingest request
@@ -57,7 +75,7 @@ export interface IngestRequest {
 }
 
 // LLM provider config
-export type LLMProvider = 'anthropic' | 'openai' | 'custom'
+export type LLMProvider = 'anthropic' | 'oai-completion' | 'oai-response'
 
 export interface LLMConfig {
   provider: LLMProvider
@@ -66,11 +84,53 @@ export interface LLMConfig {
   base_url?: string
 }
 
+// Layer budget config
+export interface LayerBudget {
+  max_tokens: number
+  max_entries: number
+  max_tokens_per_entry: number
+}
+
+export type RollingFile = 'recent' | 'distant' | 'lifetime' | 'identity'
+
+export interface RollingBudgetConfig {
+  recent:   { max_tokens: number }
+  distant:  { max_tokens: number }
+  lifetime: { max_tokens: number }
+  identity: { max_tokens: number }
+}
+
+export interface MemoryBudgetConfig {
+  identity:  { max_tokens: number }
+  flashbulb: LayerBudget
+  session:   LayerBudget
+  rolling:   RollingBudgetConfig
+}
+
+// compress_as tool types (used by agentic compression)
+export interface CompressAsInput {
+  layer: 'session'
+  id: string
+  title: string
+  content: string
+  flashbulb?: boolean
+}
+
+export interface CompressAsOutput {
+  success: boolean
+  tokens_used: number
+  tokens_limit: number
+  error?: string
+}
+
 // Full config
+export type WatchFormat = 'claude' | 'openclaw' | 'openai'
+
 export interface WatchTarget {
   path: string
-  format: 'claude' | 'openai'
+  format: WatchFormat
   memory_file: string
+  project?: string
 }
 
 export interface DoraConfig {
@@ -78,7 +138,12 @@ export interface DoraConfig {
   compression: {
     model: LLMConfig
   }
+  memory_budget: MemoryBudgetConfig
   cold_start_days: number
   session_gap_minutes: number
   memory_update_throttle_seconds: number
+  session_compress_threshold?: number
+  rolling_trigger_threshold?: number
+  timezone_offset: number
+  day_boundary_hour: number
 }

@@ -1,3 +1,27 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 *.js.map
+
+# Releases
+releases/
+*.tar.gz
+
+# Test data (contains real conversation logs)
+test-data/
+
+# Personal/IDE files
+CLAUDE.md
+.claude/
+
+# Runtime data
+*.log
+
+# OS files
+.DS_Store
+
+# Env / secrets
+.env
+.env.*

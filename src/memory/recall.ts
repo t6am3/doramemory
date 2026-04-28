@@ -1,69 +1,22 @@
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import yaml from 'js-yaml'
 import { LAYER_DIRS } from '../storage/paths.js'
-import type { MemoryChunk, MemoryFrontmatter, MemoryLayer, RecallRequest } from '../types.js'
+import { parseMemoryFile } from '../storage/utils.js'
+import { loadIndex, extractSnippet } from './search-index.js'
+import type { MemoryChunk, MemoryLayer, RecallRequest } from '../types.js'
 
-const RAW_LAYERS:     MemoryLayer[] = ['second', 'hour']
-const SUMMARY_LAYERS: MemoryLayer[] = ['day', 'week', 'month', 'year']
-
-function parseMemoryFile(raw: string): { frontmatter: MemoryFrontmatter; body: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n\n([\s\S]*)$/)
-  if (!match) return { frontmatter: {} as MemoryFrontmatter, body: raw.trim() }
-  return {
-    frontmatter: yaml.load(match[1]) as MemoryFrontmatter,
-    body: match[2].trim(),
-  }
+function extractSummary(body: string): string {
+  const firstLine = body.split('\n').find(l => l.trim().length > 0) ?? ''
+  return firstLine.replace(/^#+\s*/, '').slice(0, 200)
 }
 
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
-
-// Keyword grep across a layer directory
-async function grepLayer(
-  layer: MemoryLayer,
-  query: string,
-  maxResults = 5
-): Promise<MemoryChunk[]> {
-  const dir = LAYER_DIRS[layer]
-  const files = await readdir(dir).catch(() => [] as string[])
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
-  const results: MemoryChunk[] = []
-
-  for (const f of files.sort().reverse()) {
-    if (!f.endsWith('.md')) continue
-    const raw = await readFile(join(dir, f), 'utf8')
-    const { frontmatter, body } = parseMemoryFile(raw)
-    const bodyLower = body.toLowerCase()
-    if (terms.every(t => bodyLower.includes(t))) {
-      results.push({
-        content:    body,
-        layer,
-        time_range: { from: frontmatter.id, to: frontmatter.id },
-        sources:    frontmatter.sources ?? [],
-        match_type: 'keyword',
-        flashbulb:  frontmatter.flashbulb ?? false,
-      })
-      if (results.length >= maxResults) break
-    }
-  }
-  return results
-}
-
-// Time range query — return the file matching the given time granularity
 async function timeQuery(req: RecallRequest): Promise<MemoryChunk[]> {
   if (!req.time_range) return []
   const { from } = req.time_range
 
-  // Determine layer from the format of `from`
   let layer: MemoryLayer
-  if (/^\d{4}-\d{2}-\d{2}T/.test(from))     layer = 'second'
-  else if (/^\d{4}-\d{2}-\d{2}$/.test(from)) layer = 'day'
-  else if (/^\d{4}-W\d{2}$/.test(from))      layer = 'week'
-  else if (/^\d{4}-\d{2}$/.test(from))       layer = 'month'
-  else if (/^\d{4}$/.test(from))             layer = 'year'
-  else layer = 'day'
+  if (/^\d{4}-\d{2}-\d{2}T/.test(from)) layer = 'second'
+  else layer = 'session'
 
   const dir = LAYER_DIRS[layer]
   const files = await readdir(dir).catch(() => [] as string[])
@@ -71,43 +24,67 @@ async function timeQuery(req: RecallRequest): Promise<MemoryChunk[]> {
 
   const results: MemoryChunk[] = []
   for (const f of matching) {
-    const raw = await readFile(join(dir, f), 'utf8')
+    const filePath = join(dir, f)
+    const raw = await readFile(filePath, 'utf8')
     const { frontmatter, body } = parseMemoryFile(raw)
     results.push({
-      content:    body,
       layer,
-      time_range: { from: frontmatter.id, to: frontmatter.id },
-      sources:    frontmatter.sources ?? [],
+      id: frontmatter.id ?? f.replace('.md', ''),
+      summary: extractSummary(body),
+      snippet: body.slice(0, 100).replace(/\n/g, ' '),
+      file_path: filePath,
+      size: raw.length,
+      flashbulb: frontmatter.flashbulb ?? false,
       match_type: 'time',
-      flashbulb:  frontmatter.flashbulb ?? false,
+      score: 1,
     })
   }
   return results
 }
 
-export async function recall(req: RecallRequest): Promise<MemoryChunk[]> {
-  const maxTokens = req.max_tokens ?? 1000
-  const chunks: MemoryChunk[] = []
+export interface RecallResult {
+  chunks: MemoryChunk[]
+  total_candidates: number
+  has_more: boolean
+}
+
+export async function recall(req: RecallRequest): Promise<RecallResult> {
+  const maxResults = req.max_results ?? 10
+  const offset = req.offset ?? 0
 
   if (req.time_range) {
-    chunks.push(...await timeQuery(req))
-  } else if (req.query) {
-    // Grep raw layers, then summary layers
-    for (const layer of [...RAW_LAYERS, ...SUMMARY_LAYERS]) {
-      const results = await grepLayer(layer, req.query)
-      chunks.push(...results)
+    const candidates = await timeQuery(req)
+    const paged = candidates.slice(offset, offset + maxResults)
+    return {
+      chunks: paged,
+      total_candidates: candidates.length,
+      has_more: offset + maxResults < candidates.length,
     }
   }
 
-  // Trim to token budget, most recent first
-  const selected: MemoryChunk[] = []
-  let usedTokens = 0
-  for (const chunk of chunks) {
-    const t = estimateTokens(chunk.content)
-    if (usedTokens + t > maxTokens) break
-    selected.push(chunk)
-    usedTokens += t
+  if (!req.query) {
+    return { chunks: [], total_candidates: 0, has_more: false }
   }
 
-  return selected
+  const idx = await loadIndex()
+  const results = idx.search(req.query)
+
+  const chunks: MemoryChunk[] = results.map(r => ({
+    layer: (r as any).layer ?? 'session',
+    id: r.id.replace(/^(session|rolling):/, ''),
+    summary: (r as any).summary ?? '',
+    snippet: extractSnippet((r as any).body ?? '', req.query!, 50),
+    file_path: (r as any).file_path ?? '',
+    size: (r as any).size ?? 0,
+    flashbulb: (r as any).flashbulb ?? false,
+    match_type: 'keyword' as const,
+    score: r.score,
+  }))
+
+  const paged = chunks.slice(offset, offset + maxResults)
+  return {
+    chunks: paged,
+    total_candidates: chunks.length,
+    has_more: offset + maxResults < chunks.length,
+  }
 }

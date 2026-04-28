@@ -1,9 +1,12 @@
 import * as p from '@clack/prompts'
-import { existsSync } from 'fs'
+import { existsSync, readdirSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { homedir } from 'os'
-import { join } from 'path'
-import { saveConfig } from '../config.js'
+import { join, resolve, dirname } from 'path'
+import yaml from 'js-yaml'
+import { saveConfig, DEFAULT_CONFIG } from '../config.js'
+import { ensureDirectories, CONFIG_FILE, LAYER_DIRS } from '../storage/paths.js'
+import { runCompress } from './compress.js'
 import type { DoraConfig, LLMProvider } from '../types.js'
 
 const KNOWN_AGENTS = [
@@ -12,6 +15,12 @@ const KNOWN_AGENTS = [
     path:        join(homedir(), '.claude', 'projects'),
     format:      'claude' as const,
     memory_file: join(homedir(), '.claude', 'CLAUDE.md'),
+  },
+  {
+    name:        'OpenClaw',
+    path:        join(homedir(), '.openclaw', 'agents'),
+    format:      'openclaw' as const,
+    memory_file: join(homedir(), '.openclaw', 'workspace', 'MEMORY.md'),
   },
   {
     name:        'Cursor',
@@ -51,7 +60,63 @@ async function injectMcpConfig(): Promise<void> {
   await writeFile(mcpConfigPath, JSON.stringify(config, null, 2), 'utf8')
 }
 
-export async function runInit(): Promise<void> {
+export async function runInit(args: string[] = []): Promise<void> {
+  const configIdx = args.indexOf('--config')
+  if (configIdx !== -1 && args[configIdx + 1]) {
+    await runNonInteractiveInit(args[configIdx + 1])
+    return
+  }
+
+  if (!process.stdin.isTTY) {
+    if (existsSync(CONFIG_FILE)) {
+      console.log(JSON.stringify({ success: true, message: 'config already exists', path: CONFIG_FILE }))
+      return
+    }
+    console.error('Non-interactive mode requires --config <path>. Example:')
+    console.error('  npx doramemory init --config ./config.yaml')
+    process.exit(1)
+  }
+
+  await runInteractiveInit()
+}
+
+async function runNonInteractiveInit(configPath: string): Promise<void> {
+  const absPath = resolve(configPath)
+  if (!existsSync(absPath)) {
+    console.error(JSON.stringify({ error: `Config file not found: ${absPath}` }))
+    process.exit(1)
+  }
+
+  const raw = await readFile(absPath, 'utf8')
+  const expandedRaw = raw.replace(/~/g, homedir())
+  const loaded = yaml.load(expandedRaw) as Partial<DoraConfig>
+
+  const config: DoraConfig = {
+    ...DEFAULT_CONFIG,
+    ...loaded,
+    memory_budget: { ...DEFAULT_CONFIG.memory_budget, ...loaded.memory_budget },
+  }
+
+  if (!config.compression?.model?.provider || !config.compression?.model?.model_id) {
+    console.error(JSON.stringify({ error: 'config must include compression.model.provider and compression.model.model_id' }))
+    process.exit(1)
+  }
+
+  await ensureDirectories()
+  await saveConfig(config)
+  await injectMcpConfig().catch(() => {
+    process.stderr.write('[warn] Failed to inject MCP config (permission denied), skipping.\n')
+  })
+
+  console.log(JSON.stringify({
+    success: true,
+    config_file: CONFIG_FILE,
+    watch: config.watch.map(w => ({ path: w.path, format: w.format, memory_file: w.memory_file })),
+    model: { provider: config.compression.model.provider, model_id: config.compression.model.model_id },
+  }))
+}
+
+async function runInteractiveInit(): Promise<void> {
   p.intro('DoraMemory — 初始化')
 
   // Step 1: Detect agents
@@ -64,7 +129,6 @@ export async function runInit(): Promise<void> {
   const selectedAgents = await p.multiselect({
     message: '检测到以下 agent 产品，选择要监控的：',
     options: detected.map(a => ({ value: a.name, label: `${a.name}  (${a.path})` })),
-    initialValues: detected.map(a => a.name),
   })
   if (p.isCancel(selectedAgents)) { p.cancel('已取消'); return }
 
@@ -74,30 +138,65 @@ export async function runInit(): Promise<void> {
   for (const target of watchTargets) {
     const hasPlaceholder = await checkPlaceholder(target.memory_file)
     if (!hasPlaceholder) {
-      p.note(
-        `请在 ${target.memory_file} 中添加：\n\n  ## Memory\n  {{DORAMEMORY}}\n\n然后按回车继续。`,
-        `设置 ${target.name} 记忆占位符`
-      )
-      await p.text({ message: '完成后按回车...' })
+      if (!existsSync(target.memory_file)) {
+        await mkdir(dirname(target.memory_file), { recursive: true })
+        await writeFile(target.memory_file, '\n{{DORAMEMORY}}\n', 'utf8')
+        p.log.success(`已创建 ${target.memory_file} 并注入占位符`)
+      } else {
+        const content = await readFile(target.memory_file, 'utf8')
+        await writeFile(target.memory_file, content.trimEnd() + '\n\n{{DORAMEMORY}}\n', 'utf8')
+        p.log.success(`已在 ${target.memory_file} 末尾注入占位符`)
+      }
+    } else {
+      p.log.info(`${target.memory_file} 已有占位符，跳过`)
     }
   }
 
   // Step 3: Configure LLM
-  const llmProvider = await p.select({
-    message: '选择压缩模型接口：',
+  const llmChoice = await p.select({
+    message: '选择压缩模型配置方式：',
     options: [
-      { value: 'anthropic', label: 'Anthropic  (claude-haiku-4-5)' },
-      { value: 'openai',    label: 'OpenAI     (gpt-4o-mini)' },
-      { value: 'custom',    label: '自定义      (填写 model / url / key)' },
+      { value: 'anthropic-default',      label: 'Anthropic 预设      (claude-haiku-4-5)' },
+      { value: 'oai-completion-default', label: 'OAI-Completion 预设 (gpt-4o-mini, Chat Completions API)' },
+      { value: 'oai-response-default',  label: 'OAI-Response 预设   (gpt-4o-mini, Responses API)' },
+      { value: 'custom',                 label: '自定义               (选协议 + 填 model / url / key)' },
     ],
-  }) as LLMProvider
-  if (p.isCancel(llmProvider)) { p.cancel('已取消'); return }
+  }) as string
+  if (p.isCancel(llmChoice)) { p.cancel('已取消'); return }
 
-  let modelId = 'claude-haiku-4-5-20251001'
+  let llmProvider: LLMProvider
+  let modelId: string
   let baseUrl: string | undefined
   let apiKey: string | undefined
 
-  if (llmProvider === 'anthropic') {
+  if (llmChoice === 'custom') {
+    const protocol = await p.select({
+      message: '选择 LLM 通信协议：',
+      options: [
+        { value: 'oai-completion', label: 'OAI-Completion  (OpenAI Chat Completions API，兼容大多数第三方)' },
+        { value: 'oai-response',  label: 'OAI-Response    (OpenAI Responses API)' },
+        { value: 'anthropic',      label: 'Anthropic       (Anthropic Messages API)' },
+      ],
+    }) as LLMProvider
+    if (p.isCancel(protocol)) { p.cancel('已取消'); return }
+    llmProvider = protocol
+
+    const mid = await p.text({ message: 'Model ID:' })
+    if (p.isCancel(mid)) { p.cancel('已取消'); return }
+    modelId = mid as string
+
+    const url = await p.text({
+      message: 'Base URL (留空使用默认):',
+      placeholder: llmProvider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1',
+    })
+    if (p.isCancel(url)) { p.cancel('已取消'); return }
+    if (url) baseUrl = url as string
+
+    const key = await p.text({ message: 'API Key (留空则填 none):' })
+    if (p.isCancel(key)) { p.cancel('已取消'); return }
+    apiKey = (key as string) || 'none'
+  } else if (llmChoice === 'anthropic-default') {
+    llmProvider = 'anthropic'
     modelId = 'claude-haiku-4-5-20251001'
     apiKey  = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
@@ -107,7 +206,8 @@ export async function runInit(): Promise<void> {
     } else {
       p.log.success('检测到 ANTHROPIC_API_KEY，直接使用')
     }
-  } else if (llmProvider === 'openai') {
+  } else {
+    llmProvider = llmChoice.replace('-default', '') as LLMProvider
     modelId = 'gpt-4o-mini'
     apiKey  = process.env.OPENAI_API_KEY
     if (!apiKey) {
@@ -117,18 +217,6 @@ export async function runInit(): Promise<void> {
     } else {
       p.log.success('检测到 OPENAI_API_KEY，直接使用')
     }
-  } else {
-    const mid = await p.text({ message: 'Model ID:' })
-    if (p.isCancel(mid)) { p.cancel('已取消'); return }
-    modelId = mid as string
-
-    const url = await p.text({ message: 'Base URL (e.g. http://localhost:11434/v1):' })
-    if (p.isCancel(url)) { p.cancel('已取消'); return }
-    baseUrl = url as string
-
-    const key = await p.text({ message: 'API Key (留空则填 none):' })
-    if (p.isCancel(key)) { p.cancel('已取消'); return }
-    apiKey = (key as string) || 'none'
   }
 
   // Step 4: Save config + install
@@ -141,9 +229,22 @@ export async function runInit(): Promise<void> {
     compression: {
       model: { provider: llmProvider, model_id: modelId, api_key: apiKey, base_url: baseUrl },
     },
+    memory_budget: {
+      identity:  { max_tokens: 200 },
+      flashbulb: { max_tokens: 2000, max_entries: 5,  max_tokens_per_entry: 60  },
+      session:   { max_tokens: 4000, max_entries: 10, max_tokens_per_entry: 1000 },
+      rolling:   {
+        recent:   { max_tokens: 2000 },
+        distant:  { max_tokens: 1000 },
+        lifetime: { max_tokens: 500  },
+        identity: { max_tokens: 500  },
+      },
+    },
     cold_start_days:                7,
     session_gap_minutes:            30,
     memory_update_throttle_seconds: 300,
+    timezone_offset:                8,
+    day_boundary_hour:              4,
   }
 
   const spinner = p.spinner()
@@ -153,6 +254,26 @@ export async function runInit(): Promise<void> {
   await injectMcpConfig()
 
   spinner.stop('安装完成')
+
+  // Step 5: Check for existing data and offer compression
+  const secondDir = LAYER_DIRS.second
+  if (existsSync(secondDir)) {
+    const files = readdirSync(secondDir).filter(f => f.endsWith('.jsonl'))
+    if (files.length > 0) {
+      const doCompress = await p.select({
+        message: `检测到 ${files.length} 小时的存量记忆数据，是否现在压缩？`,
+        options: [
+          { value: 'yes',   label: '立即压缩存量数据' },
+          { value: 'fresh', label: '清空已有压缩结果后重新压缩 (--fresh)' },
+          { value: 'no',    label: '跳过，稍后手动运行 npx doramemory compress' },
+        ],
+      }) as string
+      if (!p.isCancel(doCompress) && doCompress !== 'no') {
+        const args = doCompress === 'fresh' ? ['--fresh'] : []
+        await runCompress(args)
+      }
+    }
+  }
 
   p.note(
     '启动守护进程：  npx doramemory start\n' +

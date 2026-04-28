@@ -1,0 +1,14 @@
+# DoraMemory config — Claude Code + OpenAI compatible API
+# Usage: npx doramemory init --config ./config-claude-openai.yaml
+
+watch:
+  - path: ~/.claude/projects
+    format: claude
+    memory_file: ~/.claude/CLAUDE.md
+
+compression:
+  model:
+    provider: oai-completion
+    model_id: gpt-4o-mini
+    # api_key: sk-...       # or set OPENAI_API_KEY env var
+    # base_url: https://api.openai.com/v1  # change for third-party providers

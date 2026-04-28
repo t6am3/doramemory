@@ -1,0 +1,33 @@
+# DoraMemory config — Multiple agents
+# Usage: npx doramemory init --config ./config-multi-agent.yaml
+
+watch:
+  - path: ~/.claude/projects
+    format: claude
+    memory_file: ~/.claude/CLAUDE.md
+  - path: ~/.openclaw/agents
+    format: openclaw
+    memory_file: ~/.openclaw/workspace/MEMORY.md
+
+compression:
+  model:
+    provider: oai-completion
+    model_id: gpt-4o-mini
+    base_url: https://api.openai.com/v1
+    # api_key: sk-...
+
+# Optional: customize token budgets
+# memory_budget:
+#   identity:  { max_tokens: 200 }
+#   flashbulb: { max_entries: 5,  max_tokens_per_entry: 60 }
+#   session:   { max_entries: 10, max_tokens_per_entry: 1000 }
+#   rolling:
+#     recent:   { max_tokens: 2000 }
+#     distant:  { max_tokens: 1000 }
+#     lifetime: { max_tokens: 500 }
+#     identity: { max_tokens: 500 }
+
+# Optional: timing overrides
+# cold_start_days: 7
+# session_gap_minutes: 30
+# memory_update_throttle_seconds: 300

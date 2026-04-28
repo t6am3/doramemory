@@ -6,19 +6,10 @@ import { readFile, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import yaml from 'js-yaml'
-import { LAYER_DIRS } from '../storage/paths.js'
+import { LAYER_DIRS, ensureDirectories } from '../storage/paths.js'
+import { parseMemoryFile } from '../storage/utils.js'
 import { loadBloom } from '../index/bloom.js'
-import { ensureDirectories } from '../storage/paths.js'
 import type { MemoryFrontmatter } from '../types.js'
-
-function parseMemoryFile(raw: string): { frontmatter: MemoryFrontmatter; body: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n\n([\s\S]*)$/)
-  if (!match) return { frontmatter: {} as MemoryFrontmatter, body: raw.trim() }
-  return {
-    frontmatter: yaml.load(match[1]) as MemoryFrontmatter,
-    body: match[2].trim(),
-  }
-}
 
 export async function startMcpServer(): Promise<void> {
   await ensureDirectories()
@@ -41,12 +32,12 @@ export async function startMcpServer(): Promise<void> {
       max_tokens: z.number().optional().default(800),
     },
     async ({ query, time_range, max_tokens }) => {
-      const chunks = await recall({ query, time_range, max_tokens })
-      if (chunks.length === 0) {
+      const result = await recall({ query, time_range, max_tokens })
+      if (result.chunks.length === 0) {
         return { content: [{ type: 'text', text: '没有找到相关记忆。' }] }
       }
-      const text = chunks
-        .map(c => `[${c.layer} · ${c.time_range.from} · ${c.match_type}]\n${c.content}`)
+      const text = result.chunks
+        .map(c => `[${c.layer} · ${c.id} · ${c.match_type} · score=${c.score.toFixed(2)}]\n${c.summary}\n> ${c.snippet}\n📄 ${c.file_path}`)
         .join('\n\n---\n\n')
       return { content: [{ type: 'text', text }] }
     }
@@ -57,9 +48,9 @@ export async function startMcpServer(): Promise<void> {
     'Mark a memory as important (flashbulb) or correct a summary.',
     {
       memory_id:  z.string().describe('The id from a memory_recall result'),
-      layer:      z.enum(['second', 'minute', 'hour', 'day', 'week', 'month', 'year']),
+      layer:      z.enum(['second', 'session']),
       flashbulb:  z.boolean().optional().describe('Mark as permanent memory'),
-      content:    z.string().optional().describe('Corrected content (only for day and above)'),
+      content:    z.string().optional().describe('Corrected content'),
     },
     async ({ memory_id, layer, flashbulb, content }) => {
       const layerDir = LAYER_DIRS[layer]
@@ -71,7 +62,7 @@ export async function startMcpServer(): Promise<void> {
       const raw = await readFile(filePath, 'utf8')
       const { frontmatter, body } = parseMemoryFile(raw)
 
-      if (content && ['second', 'minute', 'hour'].includes(layer)) {
+      if (content && layer === 'second') {
         return { content: [{ type: 'text', text: 'Raw layer content cannot be edited.' }] }
       }
 
