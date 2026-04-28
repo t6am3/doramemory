@@ -4,6 +4,15 @@
 
 给 AI Agent 加上**类人记忆**。自动监控对话日志，通过多层压缩形成长期记忆，注入到 Agent 的 MEMORY 文件中。
 
+### 输入 → 输出
+
+```
+输入：监控 *_session.jsonl 对话日志文件（Agent 每轮对话自动生成）
+输出：注入 MEMORY.md（Agent 启动时自动读取的 system prompt 文件）
+```
+
+DoraMemory **只读取** `*_session.jsonl`，**只写入** `MEMORY.md`。不修改 Agent 代码，不侵入对话流程。
+
 ## 核心亮点
 
 - **仿人类记忆的分层架构** — 5 层记忆（identity → lifetime → distant → recent → session），越近越详细，越远越抽象
