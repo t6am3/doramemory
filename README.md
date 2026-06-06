@@ -68,7 +68,12 @@ npm link
 doramemory init
 ```
 
-或手动创建 `~/.doramemory/config.yaml`：
+或手动创建配置文件：
+
+- macOS/Linux: `~/.doramemory/config.yaml`
+- Windows: `%USERPROFILE%\.doramemory\config.yaml`
+
+DoraMemory 会在路径字段中展开 `~`、`$VAR`、`${VAR}` 和 `%VAR%`：
 
 ```yaml
 watch:
@@ -105,6 +110,18 @@ doramemory start
 doramemory install
 ```
 
+后台服务安装策略：
+
+- macOS: `launchd` 或 `pm2`
+- Windows/Linux: `pm2` 或手动管理
+
+Windows 如选择 PM2，先安装：
+
+```powershell
+npm install -g pm2
+doramemory install
+```
+
 ## CLI 命令
 
 | 命令 | 说明 |
@@ -112,7 +129,7 @@ doramemory install
 | `doramemory init` | 交互式初始化配置 |
 | `doramemory start` | 启动守护进程 |
 | `doramemory stop` | 停止守护进程 |
-| `doramemory install` | 安装为后台服务 |
+| `doramemory install` | 安装为后台服务（macOS launchd / 跨平台 pm2） |
 | `doramemory status` | 查看运行状态 |
 | `doramemory compress` | 手动压缩存量记忆 |
 | `doramemory recall --query "关键词"` | 搜索记忆 |

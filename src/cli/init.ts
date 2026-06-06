@@ -7,6 +7,7 @@ import yaml from 'js-yaml'
 import { saveConfig, DEFAULT_CONFIG } from '../config.js'
 import { ensureDirectories, CONFIG_FILE, LAYER_DIRS } from '../storage/paths.js'
 import { runCompress } from './compress.js'
+import { claudeMcpConfigPath, expandUserPath, npmBinary } from '../platform.js'
 import type { DoraConfig, LLMProvider } from '../types.js'
 
 const KNOWN_AGENTS = [
@@ -41,7 +42,7 @@ async function checkPlaceholder(memoryFile: string): Promise<boolean> {
 }
 
 async function injectMcpConfig(): Promise<void> {
-  const mcpConfigPath = join(homedir(), '.claude', 'claude_desktop_config.json')
+  const mcpConfigPath = claudeMcpConfigPath()
   let config: Record<string, unknown> = {}
 
   if (existsSync(mcpConfigPath)) {
@@ -51,12 +52,12 @@ async function injectMcpConfig(): Promise<void> {
 
   const servers = (config.mcpServers ?? {}) as Record<string, unknown>
   servers['doramemory'] = {
-    command: 'npx',
+    command: npmBinary('npx'),
     args:    ['doramemory', 'mcp'],
   }
   config.mcpServers = servers
 
-  await mkdir(join(homedir(), '.claude'), { recursive: true })
+  await mkdir(dirname(mcpConfigPath), { recursive: true })
   await writeFile(mcpConfigPath, JSON.stringify(config, null, 2), 'utf8')
 }
 
@@ -88,14 +89,19 @@ async function runNonInteractiveInit(configPath: string): Promise<void> {
   }
 
   const raw = await readFile(absPath, 'utf8')
-  const expandedRaw = raw.replace(/~/g, homedir())
-  const loaded = yaml.load(expandedRaw) as Partial<DoraConfig>
+  const loaded = yaml.load(raw) as Partial<DoraConfig>
 
   const config: DoraConfig = {
     ...DEFAULT_CONFIG,
     ...loaded,
     memory_budget: { ...DEFAULT_CONFIG.memory_budget, ...loaded.memory_budget },
   }
+
+  config.watch = config.watch.map(w => ({
+    ...w,
+    path:        expandUserPath(w.path),
+    memory_file: expandUserPath(w.memory_file),
+  }))
 
   if (!config.compression?.model?.provider || !config.compression?.model?.model_id) {
     console.error(JSON.stringify({ error: 'config must include compression.model.provider and compression.model.model_id' }))

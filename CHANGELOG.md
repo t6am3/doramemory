@@ -4,6 +4,18 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.9.1] — 2026-06-05
+
+### Changed
+- 后台服务安装改为平台感知：macOS 保留 launchd，Windows/Linux 使用 pm2 或手动管理。
+- 子进程调用改为参数化执行，修复路径含空格时 launchctl/pm2 命令拼接失败的问题。
+- 非交互初始化仅对路径字段展开 `~`、`$VAR`、`${VAR}`、`%VAR%`，避免误改其他配置值。
+- MCP 配置路径按平台解析，Windows 写入 `%APPDATA%\Claude\claude_desktop_config.json`，命令使用 `npx.cmd`。
+- OpenClaw session id、watcher project 推断、legacy 目录显示改为跨平台路径处理。
+- 新增 `npm run check:compat`，覆盖当前平台和模拟 Windows 的路径/命令兼容断言。
+
+---
+
 ## [v0.9] — 2026-04-08
 
 ### Changed

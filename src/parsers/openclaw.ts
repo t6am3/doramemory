@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import { normalizePathForMatching } from '../platform.js'
 import type { RawMessage, MessageRole } from '../types.js'
 
 // OpenClaw JSONL format — each line has a `type` field.
@@ -77,7 +78,7 @@ export function parseOpenClawLine(
 
 export function deriveSessionId(filePath: string): string {
   // OpenClaw filenames are already UUIDs, use first 8 chars
-  const fileName = filePath.split('/').pop() ?? ''
+  const fileName = normalizePathForMatching(filePath).split('/').pop() ?? ''
   const uuid = fileName.replace('.jsonl', '')
   if (uuid.match(/^[0-9a-f-]{36}$/)) return uuid.slice(0, 8)
   return createHash('sha256').update(filePath).digest('hex').slice(0, 8)

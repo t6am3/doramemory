@@ -1,6 +1,6 @@
 import { readdir, unlink, mkdir, rm } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { loadConfig } from '../config.js'
 import {
   compressSecondToSession,
@@ -98,7 +98,7 @@ export async function runCompress(args: string[]): Promise<void> {
     for (const dir of LEGACY_DIRS) {
       if (existsSync(dir)) {
         await rm(dir, { recursive: true })
-        process.stderr.write(`   Removed legacy ${dir.split('/').pop()}/\n`)
+        process.stderr.write(`   Removed legacy ${basename(dir)}/\n`)
       }
     }
   }

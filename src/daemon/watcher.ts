@@ -10,19 +10,22 @@ import { parseOpenClawLine, deriveSessionId as openclawSessionId } from '../pars
 import { writeMessages } from '../storage/writer.js'
 import { triggerPartialCompression } from './scheduler.js'
 import { log } from '../logger.js'
+import { normalizePathForMatching } from '../platform.js'
 import type { DoraConfig, RawMessage, WatchFormat, WatchTarget } from '../types.js'
 
 type LineParseFn = (line: string, sessionId: string, index: number) => RawMessage | null
 type SessionIdFn = (filePath: string) => string
 
 export function inferProject(filePath: string, format: WatchFormat): string {
+  const normalizedPath = normalizePathForMatching(filePath)
+
   switch (format) {
     case 'claude': {
-      const m = filePath.match(/\.claude\/projects\/[^/]*-([^-/]+)/)
+      const m = normalizedPath.match(/\.claude\/projects\/[^/]*-([^-/]+)/)
       return m ? `claude-code-${m[1]}` : 'claude-code'
     }
     case 'openclaw': {
-      const m = filePath.match(/\.openclaw\/agents\/([^/]+)/)
+      const m = normalizedPath.match(/\.openclaw\/agents\/([^/]+)/)
       return m ? `openclaw-${m[1]}` : 'openclaw'
     }
     case 'openai': {

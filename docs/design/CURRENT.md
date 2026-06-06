@@ -302,7 +302,7 @@ npx doramemory compress --limit 10
 # 前台启动（调试用）
 npx doramemory start
 
-# 安装为 macOS launchd 后台服务
+# 安装为后台服务（macOS: launchd/pm2；Windows/Linux: pm2）
 npx doramemory install
 
 # 卸载后台服务
@@ -319,6 +319,11 @@ npx doramemory status
 4. 启动 chokidar 文件监控
 5. 每次有新对话消息时触发事件驱动压缩
 6. 定期心跳写入
+
+平台兼容：
+- macOS 保留 launchd 原生守护方式
+- Windows/Linux 使用 PM2 或手动前台运行
+- MCP 配置路径按平台解析，Windows 写入 `%APPDATA%\Claude\claude_desktop_config.json`
 
 ### 9.4 记忆检索与修正
 

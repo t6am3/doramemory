@@ -84,7 +84,7 @@ switch (command) {
       '  npx doramemory init       — 初始化并配置\n' +
       '  npx doramemory start      — 启动守护进程\n' +
       '  npx doramemory stop       — 停止守护进程\n' +
-      '  npx doramemory install    — 安装为后台服务 (launchd/pm2)\n' +
+      '  npx doramemory install    — 安装后台服务 (macOS launchd / 跨平台 pm2)\n' +
       '  npx doramemory uninstall  — 卸载后台服务\n' +
       '  npx doramemory status     — 查看运行状态\n' +
       '  npx doramemory compress   — 压缩存量记忆\n' +
