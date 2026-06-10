@@ -122,6 +122,52 @@ npm install -g pm2
 doramemory install
 ```
 
+## 无损升级
+
+升级 DoraMemory 代码不会迁移或清空已有记忆数据。`~/.doramemory/config.yaml`、`second/`、`session/`、`rolling/`、`core/`、`snapshots/`、`index/` 会原样保留；升级过程只需要停止旧 daemon、替换新版本、再启动。
+
+### npm 全局安装用户
+
+```bash
+doramemory stop
+npm install -g doramemory@latest
+doramemory start
+```
+
+### PM2 守护用户（Windows/Linux/macOS）
+
+```powershell
+pm2 stop doramemory
+npm install -g doramemory@latest
+pm2 restart doramemory
+```
+
+### 从源码 / `npm link` 安装用户
+
+```bash
+doramemory stop
+git pull
+npm install
+npm run build
+npm link
+doramemory start
+```
+
+### 大日志文件清理
+
+如果曾遇到日志异常膨胀，可以只删除日志文件，不会影响任何记忆数据：
+
+```powershell
+Remove-Item "$env:USERPROFILE\.doramemory\doramemory.log" -Force
+Remove-Item "$env:USERPROFILE\.doramemory\doramemory.log.1" -Force -ErrorAction SilentlyContinue
+```
+
+```bash
+rm -f ~/.doramemory/doramemory.log ~/.doramemory/doramemory.log.1
+```
+
+升级时不要重新执行 `doramemory init`，除非你明确要重写配置或重新注入占位符；不要执行 `doramemory compress --fresh`，它会清空并重建压缩层。
+
 ## CLI 命令
 
 | 命令 | 说明 |

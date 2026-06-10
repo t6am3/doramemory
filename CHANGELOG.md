@@ -4,6 +4,16 @@ All design versions and significant decisions are recorded here.
 
 ---
 
+## [v0.9.2] — 2026-06-10
+
+### Changed
+- logger 写 stdout/stderr 失败时不再抛出全局异常，避免 `EPIPE: broken pipe` 在 daemon 异常处理里递归刷爆日志。
+- daemon 全局异常处理增加递归保护，防止异常上报路径再次触发异常时形成无限循环。
+- 默认将 `doramemory.log` 控制在约 50MiB 内并轮转到 `doramemory.log.1`，可通过 `DORAMEMORY_MAX_LOG_BYTES` 调整或设为 `0` 禁用。
+- README 增加无损升级流程，明确升级不清空已有配置和压缩记忆，并标出 `init` / `compress --fresh` 的风险边界。
+
+---
+
 ## [v0.9.1] — 2026-06-05
 
 ### Changed

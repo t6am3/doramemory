@@ -55,6 +55,7 @@ function touchHeartbeat(): void {
 }
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+let reportingFatal = false
 
 function startHeartbeat(): void {
   touchHeartbeat()
@@ -91,10 +92,22 @@ export async function startDaemon(): Promise<void> {
   acquirePidLock()
 
   process.on('uncaughtException', err => {
-    log.error('daemon', `Uncaught exception: ${err.stack ?? err}`)
+    if (reportingFatal) return
+    reportingFatal = true
+    try {
+      log.error('daemon', `Uncaught exception: ${err.stack ?? err}`)
+    } finally {
+      reportingFatal = false
+    }
   })
   process.on('unhandledRejection', reason => {
-    log.error('daemon', `Unhandled rejection: ${reason}`)
+    if (reportingFatal) return
+    reportingFatal = true
+    try {
+      log.error('daemon', `Unhandled rejection: ${reason}`)
+    } finally {
+      reportingFatal = false
+    }
   })
   process.on('SIGINT',  () => shutdown('SIGINT'))
   process.on('SIGTERM', () => shutdown('SIGTERM'))
